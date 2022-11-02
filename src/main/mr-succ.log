@@ -1,0 +1,38 @@
+MapReduce
+➜  main git:(main) ✗ bash test-mr.sh
+*** Starting wc test.
+2022/11/02 23:47:45 rpc.Register: method "Done" has 1 input parameters; needs exactly three
+2022/11/02 23:47:45 rpc.Register: method "IsAllReduceTaskDone" has 1 input parameters; needs exactly three
+2022/11/02 23:47:45 rpc.Register: method "IsAllTaskDone" has 1 input parameters; needs exactly three
+--- wc test: PASS
+*** Starting indexer test.
+2022/11/02 23:48:22 rpc.Register: method "Done" has 1 input parameters; needs exactly three
+2022/11/02 23:48:22 rpc.Register: method "IsAllReduceTaskDone" has 1 input parameters; needs exactly three
+2022/11/02 23:48:22 rpc.Register: method "IsAllTaskDone" has 1 input parameters; needs exactly three
+--- indexer test: PASS
+*** Starting map parallelism test.
+2022/11/02 23:48:30 rpc.Register: method "Done" has 1 input parameters; needs exactly three
+2022/11/02 23:48:30 rpc.Register: method "IsAllReduceTaskDone" has 1 input parameters; needs exactly three
+2022/11/02 23:48:30 rpc.Register: method "IsAllTaskDone" has 1 input parameters; needs exactly three
+--- map parallelism test: PASS
+*** Starting reduce parallelism test.
+2022/11/02 23:48:37 rpc.Register: method "Done" has 1 input parameters; needs exactly three
+2022/11/02 23:48:37 rpc.Register: method "IsAllReduceTaskDone" has 1 input parameters; needs exactly three
+2022/11/02 23:48:37 rpc.Register: method "IsAllTaskDone" has 1 input parameters; needs exactly three
+--- reduce parallelism test: PASS
+*** Starting job count test.
+2022/11/02 23:48:46 rpc.Register: method "Done" has 1 input parameters; needs exactly three
+2022/11/02 23:48:46 rpc.Register: method "IsAllReduceTaskDone" has 1 input parameters; needs exactly three
+2022/11/02 23:48:46 rpc.Register: method "IsAllTaskDone" has 1 input parameters; needs exactly three
+--- job count test: PASS
+*** Starting early exit test.
+2022/11/02 23:49:01 rpc.Register: method "Done" has 1 input parameters; needs exactly three
+2022/11/02 23:49:01 rpc.Register: method "IsAllReduceTaskDone" has 1 input parameters; needs exactly three
+2022/11/02 23:49:01 rpc.Register: method "IsAllTaskDone" has 1 input parameters; needs exactly three
+--- early exit test: PASS
+*** Starting crash test.
+2022/11/02 23:49:07 rpc.Register: method "Done" has 1 input parameters; needs exactly three
+2022/11/02 23:49:07 rpc.Register: method "IsAllReduceTaskDone" has 1 input parameters; needs exactly three
+2022/11/02 23:49:07 rpc.Register: method "IsAllTaskDone" has 1 input parameters; needs exactly three
+--- crash test: PASS
+*** PASSED ALL TESTS
