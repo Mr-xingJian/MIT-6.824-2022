@@ -20,12 +20,16 @@ package raft
 import (
 	//	"bytes"
 	// "log"
+	"bytes"
+	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	//	"6.824/labgob"
+	"6.824/labgob"
 	"6.824/labrpc"
 )
 
@@ -239,6 +243,19 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+    w := new(bytes.Buffer)
+    e := labgob.NewEncoder(w)
+    e.Encode(rf.state)
+    e.Encode(rf.leader)
+    e.Encode(rf.currentTerm)
+    e.Encode(rf.voteFor)
+    e.Encode(rf.logs)
+    e.Encode(rf.lastHeartBeat)
+    e.Encode(rf.matchIndex)
+    e.Encode(rf.commitedIndex)
+    data := w.Bytes()
+    rf.persister.SaveRaftState(data)
+    fmt.Println("persist: ", *rf)
 }
 
 
@@ -262,6 +279,32 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+    r := bytes.NewBuffer(data)
+    d := labgob.NewDecoder(r)
+    var state int
+    var leader int
+    var currentTerm int
+    var voteFor int
+    var logs []Log
+    var lastHeartBeat int
+    var commitedIndex int
+    var matchIndex []int
+    if d.Decode(&state) != nil || d.Decode(&leader) != nil ||
+        d.Decode(&currentTerm) != nil || d.Decode(&voteFor) != nil ||
+        d.Decode(&logs) != nil || d.Decode(&lastHeartBeat) != nil ||
+        d.Decode(&matchIndex) != nil || d.Decode(&commitedIndex) != nil {
+            log.Fatal("ERR: readPersist error")
+    } else {
+        rf.state = state
+        rf.leader = leader
+        rf.currentTerm = currentTerm
+        rf.voteFor = voteFor
+        rf.logs = logs
+        rf.lastHeartBeat = int64(lastHeartBeat)
+        rf.commitedIndex = commitedIndex
+        rf.matchIndex = matchIndex
+    }
+    return
 }
 
 //
@@ -374,6 +417,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
     } else {
 
         // ignore
+
     }
 
     reply.Info.CurrentTerm = rf.currentTerm
@@ -431,7 +475,7 @@ func (rf *Raft) AppendEntries(req *AppendEntriesReq, rsp *AppendEntriesRsp) {
                     Command: rf.logs[idx].Command,
                     CommandIndex: rf.logs[idx].LogIndex,
                 }
-                // DPrintf("INFO: server %d agree %v", rf.me, msg)
+                DPrintf("INFO: server %d agree %v req %v\n", rf.me, msg, *req)
                 rf.applyCh <- msg
                 rf.commitedIndex++
             }
@@ -519,6 +563,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
     isLeader = rf.state == LEADER
     term = rf.currentTerm
     endIndex := -1
+    commitedIndex := rf.commitedIndex
     startConsensus := false
 
     if isLeader {
@@ -539,7 +584,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
     rf.mu.Unlock()
 
     if startConsensus {
-        go rf.RaftConsensusNoLock(term, endIndex, term, false)
+        go rf.RaftConsensusNoLock(term, endIndex, term, commitedIndex, false)
         // DPrintf("INFO: RaftConsensusNoLock Start ret %v server %d endIndex %d cmd %v logs %v\n", ok, rf.me, endIndex, command, rf.logs)
     }
 
@@ -672,9 +717,12 @@ func (rf *Raft) MakeElection() {
 
         // MakeElection fail
         // DPrintf("INFO: %d do not become leader term %d voter %v logs %v\n", rf.me, rf.currentTerm, test, rf.logs)
+        rf.leader = -1
+        rf.voteFor = -1
         rf.revertToFollowerNoLock(rf.currentTerm, rf.leader, rf.voteFor)
 
     }
+
     cond.L.Unlock()
     rf.mu.Unlock()
 
@@ -737,7 +785,7 @@ func (rf *Raft) ticker() {
 //
 // raft procedure at index
 //
-func (rf *Raft) RaftConsensusNoLock(indexTerm int, endIndex int, currentTerm int, waitAll bool) bool {
+func (rf *Raft) RaftConsensusNoLock(indexTerm int, endIndex int, currentTerm int, commitedIndex int, waitAll bool) bool {
 
     consensusRet := false
     startConsensus := false
@@ -784,7 +832,7 @@ func (rf *Raft) RaftConsensusNoLock(indexTerm int, endIndex int, currentTerm int
                 req.Info.CurrentTerm = currentTerm
                 req.PrevLogIndex = tmpPrevIndex
                 req.PrevLogTerm = rf.GetTermAtIndex(tmpPrevIndex)
-                req.CommitedIndex = rf.commitedIndex
+                req.CommitedIndex = commitedIndex
                 entries := []Log{}
                 if rf.IsMatchEntryNoLock(indexTerm, endIndex) && tmpPrevIndex + 1 <= rf.LastLogIndex() {
                     entries = rf.logs[tmpPrevIndex + 1 : ]
@@ -848,7 +896,7 @@ func (rf *Raft) RaftConsensusNoLock(indexTerm int, endIndex int, currentTerm int
                 }
 
                 rf.logs[idx].Commited = true
-                // DPrintf("INFO: server %d agree %v", rf.me, msg)
+                DPrintf("INFO: server %d agree %v", rf.me, msg)
                 rf.applyCh <- msg
             }
             rf.commitedIndex = endIndex
@@ -872,10 +920,11 @@ func (rf *Raft) appendEntryTicker() {
         rf.mu.Lock()
         indexTerm, endIndex := rf.LastLogTerm(), rf.LastLogIndex()
         currentTerm := rf.currentTerm
+        commitedIndex := rf.commitedIndex
         rf.mu.Unlock()
 
         if rf.GetStateWithLock() == LEADER {
-            go rf.RaftConsensusNoLock(indexTerm, endIndex, currentTerm, true)
+            go rf.RaftConsensusNoLock(indexTerm, endIndex, currentTerm, commitedIndex, true)
             // DPrintf("INFO: RaftConsensusNoLock appendEntryTicke end ret %v server %d\n", ok, rf.me);
         } else {
             // not a leader yet
@@ -908,9 +957,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.leader = NO_LEADER  // now learder this time
     rf.lastHeartBeat = GetNowMillSecond()
 
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
-
     // load currentTerm and voteFor from disk
     rf.currentTerm = INIT_TERM
     rf.voteFor = -1
@@ -921,14 +967,23 @@ func Make(peers []*labrpc.ClientEnd, me int,
     rf.logs = make([]Log, 0)
     rf.logs = append(rf.logs, Log{Command: nil, LogIndex: INIT_INDEX, Term: INIT_TERM, Commited: true})
     rf.commitedIndex = 0
-    rf.matchIndex = make([]int, len(rf.peers))
-    for i := 0; i < len(rf.matchIndex); i++ {
-        rf.matchIndex[i] = rf.LastLogIndex()
-    }
-
     rand.Seed(time.Now().UnixNano())
 
-    // DPrintln("INFO: Start a raft node")
+	// initialize from state persisted before a crash
+	rf.readPersist(persister.ReadRaftState())
+
+    if len(rf.matchIndex) == 0 {
+        rf.matchIndex = make([]int, len(rf.peers))
+        for i := 0; i < len(rf.matchIndex); i++ {
+            rf.matchIndex[i] = rf.LastLogIndex()
+        }
+    }
+
+    if rf.state == LEADER {
+        go rf.appendEntryTicker()
+    }
+
+    DPrintln("INFO: Start a raft node", rf.me, rf)
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
