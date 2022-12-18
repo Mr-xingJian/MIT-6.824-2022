@@ -16,3 +16,4 @@ MapReduce还是相对简单的，基本就是一个任务分发然后收集结�
 Done
 ### 2B Log Replication
 Done
+### 2C Persistence
