@@ -103,6 +103,7 @@ type Raft struct {
 
 	// apply chan
 	applyCh chan ApplyMsg
+	innerCh chan ApplyMsg
 
 	// Log Entry
 	logs          []Log
@@ -239,6 +240,8 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+
+	DPrintf("INFO: persist start %v\n", GetNowMillSecond())
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
 	e.Encode(rf.currentTerm)
@@ -246,7 +249,7 @@ func (rf *Raft) persist() {
 	e.Encode(rf.logs)
 	data := w.Bytes()
 	rf.persister.SaveRaftState(data)
-	// fmt.Println("persist", *rf)
+	DPrintf("INFO: persist end %v\n", GetNowMillSecond())
 }
 
 //
@@ -425,13 +428,10 @@ func (rf *Raft) AppendEntries(req *AppendEntriesReq, rsp *AppendEntriesRsp) {
 						Command:      rf.logs[idx].Command,
 						CommandIndex: rf.logs[idx].LogIndex,
 					}
-					// DPrintf("INFO: server %d agree %v req %v\n", rf.me, msg, *req)
-					// if !rf.logs[idx].Commited {
-					// 	DPrintf("INFO: follower agree raft %d term %d msg %v\n", rf.me, rf.currentTerm, msg)
-					// 	rf.applyCh <- msg
-					// }
-					DPrintf("INFO: follower agree raft %d term %d msg %v\n", rf.me, rf.currentTerm, msg)
+					DPrintf("INFO: Apply start time %v\n", GetNowMillSecond())
 					rf.applyCh <- msg
+					DPrintf("INFO: Apply end time %v\n", GetNowMillSecond())
+					DPrintf("INFO: follower agree raft %d term %d msg %v\n", rf.me, rf.currentTerm, msg)
 					rf.logs[idx].Commited = true
 					rf.SetCommitedIndexNoLock(rf.commitedIndex + 1)
 				}
@@ -541,8 +541,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// DPrintf("INFO: Start Consensus server %d term %v cmd %v isleader %v logs %v\n", rf.me, term, command, isLeader, rf.logs)
 	rf.mu.Unlock()
 
+	DPrintf("INFO: Start Consensus server %d term %v index %d endIndex %d cmd %v isleader %v\n", rf.me, term, index, endIndex, command, isLeader)
 	if startConsensus {
-		DPrintf("INFO: Start Consensus server %d term %v index %d endIndex %d cmd %v isleader %v\n", rf.me, term, index, endIndex, command, isLeader)
 		go rf.Consensus(term, endIndex, term, commitedIndex, false)
 		// DPrintf("INFO: Consensus Start ret %v server %d endIndex %d cmd %v logs %v\n", ok, rf.me, endIndex, command, rf.logs)
 	}
@@ -657,7 +657,7 @@ func (rf *Raft) MakeElection() {
 	for !voteFail && voteCount < rf.GetMajorityCount() && finished < rf.GetServerCount() {
 		if GetNowMillSecond()-startTime > 300 {
 			// timeout
-			voteFail = true
+			// voteFail = true
 		}
 		cond.Wait()
 	}
@@ -812,7 +812,7 @@ func (rf *Raft) Consensus(consensusTerm int, consensusIndex int, currentTerm int
 	consensusCond.L.Lock()
 	for !consensusFail && consensusSuccCount < rf.GetMajorityCount() && consensusFiniashCount < rf.GetServerCount() {
 		if GetNowMillSecond()-consensusStartTime > 300 {
-			consensusFail = true
+			// consensusFail = true
 		}
 		consensusCond.Wait()
 	}
@@ -832,13 +832,10 @@ func (rf *Raft) Consensus(consensusTerm int, consensusIndex int, currentTerm int
 					Command:      rf.logs[idx].Command,
 					CommandIndex: rf.logs[idx].LogIndex,
 				}
-
-				// if !rf.logs[idx].Commited {
-				// 	DPrintf("INFO: leader agree raft %d term %d msg %v array %v\n", rf.me, currentTerm, msg, consensusSuccArray)
-				// 	rf.applyCh <- msg
-				// }
-				DPrintf("INFO: leader agree raft %d term %d msg %v array %v\n", rf.me, currentTerm, msg, consensusSuccArray)
+				DPrintf("INFO: Apply start time %v\n", GetNowMillSecond())
 				rf.applyCh <- msg
+				DPrintf("INFO: Apply end time %v\n", GetNowMillSecond())
+				DPrintf("INFO: leader agree raft %d term %d msg %v array %v\n", rf.me, currentTerm, msg, consensusSuccArray)
 				rf.logs[idx].Commited = true
 				rf.SetCommitedIndexNoLock(rf.commitedIndex + 1)
 			}
@@ -851,6 +848,13 @@ func (rf *Raft) Consensus(consensusTerm int, consensusIndex int, currentTerm int
 	return consensusRet
 }
 
+// apply function
+func (rf *Raft) ApplyMsgs() {
+	// for !rf.killed() {
+	// 	rf.applyCh <- (<-rf.innerCh)
+	// }
+}
+
 // The ticker go routine starts a new election if this peer hasn't received
 // heartsbeats recently.
 func (rf *Raft) ticker() {
@@ -859,10 +863,11 @@ func (rf *Raft) ticker() {
 		// Your code here to check if a leader election should
 		// be started and to randomize sleeping time using
 
-		// randome sleep for [150ms, 300ms]
+		go rf.ApplyMsgs()
+
 		timeout := 0
 		for true {
-			timeout = rand.Intn(200) + 300
+			timeout = rand.Intn(100) + 300
 			time.Sleep(time.Duration(timeout) * time.Millisecond)
 			// DPrintf("INFO: ticker server %d lastHeartBeat %v time %v\n", rf.me, rf.GetLastHeartBeatWithLock(), GetNowMillSecond());
 			if rf.GetLastHeartBeatWithLock()+int64(timeout) < GetNowMillSecond() {
@@ -902,8 +907,11 @@ func (rf *Raft) appendEntryTicker() {
 			// not a leader yet
 			break
 		}
+
+		rf.mu.Lock()
 		rf.ResetTimeOutNoLock()
-		time.Sleep(time.Duration(200) * time.Millisecond)
+		rf.mu.Unlock()
+		time.Sleep(time.Duration(150) * time.Millisecond)
 	}
 }
 
@@ -938,6 +946,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.voteFor = -1
 
 	rf.applyCh = applyCh
+	rf.innerCh = make(chan ApplyMsg, 1000)
 
 	// init logs
 	rf.logs = make([]Log, 0)
