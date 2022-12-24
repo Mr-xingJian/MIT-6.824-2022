@@ -659,7 +659,7 @@ func (rf *Raft) MakeElection(lastTerm int) {
 
 		DPrintf("INFO: %d become leader term %d time %v voter %v\n", rf.me, rf.currentTerm, GetNowMillSecond(), test)
 
-		go rf.appendEntryTicker()
+		go rf.AppendEntryTicker()
 
 	} else {
 
@@ -865,7 +865,7 @@ func (rf *Raft) ticker() {
 }
 
 // append entries ticker
-func (rf *Raft) appendEntryTicker() {
+func (rf *Raft) AppendEntryTicker() {
 	for rf.killed() == false {
 
 		rf.mu.Lock()
